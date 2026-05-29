@@ -1,0 +1,17 @@
+{
+  "lint": {
+    "rules": {
+      "exclude": ["no-import-prefix"]
+    }
+  },
+  "imports": {
+    "zod": "npm:zod@4.3.6"
+  },
+  "tasks": {
+    "check": "deno check extensions/**/*.ts",
+    "fmt": "deno fmt extensions/",
+    "fmt:check": "deno fmt --check extensions/",
+    "lint": "deno lint extensions/",
+    "test": "deno test extensions/"
+  }
+}
