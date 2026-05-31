@@ -1,12 +1,12 @@
 /**
  * Shared swamp-model plumbing for the `@nblair2/igor2` extension.
  *
- * The model is a single type (`@nblair2/igor2`) whose methods and resources are
- * assembled from per-resource modules under `../_groups/`. This module holds the
- * types and helpers those groups share: the method-execution context, the
- * `defineMethod` factory (which keeps per-method argument typing while erasing
- * to a uniform registry entry), resource-spec typing, and small helpers for
- * building unique instance names and writing lists of resources.
+ * The extension ships five models (`@nblair2/igor2/{reservations,hosts,boot,
+ * identity,server}`), each a self-contained `export const model` so the
+ * swamp-club registry's static content extractor can index its methods and
+ * resources. This module holds the types and helpers those models share: the
+ * method-execution context, resource-spec typing, a connected-client resolver,
+ * and small helpers for building unique instance names and writing resources.
  *
  * @module
  */
@@ -47,35 +47,12 @@ export interface MethodResult {
   dataHandles: WriteHandle[];
 }
 
-// deno-lint-ignore no-explicit-any
-type AnyExecute = (args: any, context: ModelContext) => Promise<MethodResult>;
-
-/** A method as stored in the model's `methods` registry. */
-export interface MethodDef {
-  description: string;
-  arguments: z.ZodTypeAny;
-  execute: AnyExecute;
-}
-
-/** A resource ("state") spec as stored in the model's `resources` registry. */
+/** A resource ("state") spec as stored in a model's `resources` registry. */
 export interface ResourceSpec {
   description: string;
   schema: z.ZodTypeAny;
   lifetime: string;
   garbageCollection?: number;
-}
-
-/**
- * Define a method with precise argument typing in `execute`, returning a
- * uniformly-typed registry entry. The `arguments` schema drives `args` so each
- * method body stays type-checked while groups can be stored together.
- */
-export function defineMethod<S extends z.ZodTypeAny>(def: {
-  description: string;
-  arguments: S;
-  execute: (args: z.infer<S>, context: ModelContext) => Promise<MethodResult>;
-}): MethodDef {
-  return def as unknown as MethodDef;
 }
 
 /** Resolve a connected client, honoring a test-injected fetch when present. */
@@ -119,23 +96,18 @@ export async function writeOne(
 }
 
 /**
- * Shared resource spec recording the outcome of an action that has no resource
- * of its own (elevate, sync, auth reset, host block / apply-policy). Groups that
- * use it spread it into the model's `resources`.
+ * Schema for the `operation` resource: the outcome of a one-shot igor2 action
+ * that has no resource of its own (elevate, sync, auth-reset, block, MOTD,
+ * apply-policy, …). Models that record such actions inline an `operation`
+ * resource spec referencing this schema and call {@link writeOperation}.
  */
-export const operationResource: ResourceSpec = {
-  description:
-    "Outcome of a one-shot igor2 action (elevate, sync, auth-reset, block, etc.)",
-  schema: z.object({
-    operation: z.string(),
-    target: z.string().optional(),
-    message: z.string().optional(),
-    result: z.unknown().optional(),
-    ranAt: z.string(),
-  }).passthrough(),
-  lifetime: "7d",
-  garbageCollection: 10,
-};
+export const operationSchema = z.object({
+  operation: z.string(),
+  target: z.string().optional(),
+  message: z.string().optional(),
+  result: z.unknown().optional(),
+  ranAt: z.string(),
+}).passthrough();
 
 /** Record the outcome of a one-shot action as an `operation` resource. */
 export async function writeOperation(

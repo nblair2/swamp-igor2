@@ -1,11 +1,12 @@
 manifestVersion: 1
 name: "@nblair2/igor2"
-version: "2026.05.28.2"
+version: "2026.05.30.1"
 description: >
-  Full igor2 cluster-manager control via the REST API: reservations, host power
-  and administration, host policies, the boot stack (distros, profiles, images,
-  kickstarts), identity (users, groups, elevation), clusters/MOTD, and server
-  operations (sync, stats, config, auth-reset).
+  Full igor2 cluster-manager control via the REST API, split into five models:
+  reservations (the reservation lifecycle), hosts (power, inventory,
+  administration, host policies), boot (distros, profiles, images, kickstarts),
+  identity (users, groups, privilege elevation), and server (clusters/MOTD,
+  sync, stats, config, auth-reset, dashboard).
 repository: "https://github.com/nblair2/swamp-igor2"
 labels:
   - igor2
@@ -21,7 +22,11 @@ labels:
   - groups
   - admin
 models:
-  - igor.ts
+  - reservations.ts
+  - hosts.ts
+  - boot.ts
+  - identity.ts
+  - server.ts
 additionalFiles:
   - LICENSE.txt
   - README.md
