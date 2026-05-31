@@ -1,24 +1,27 @@
 /**
- * Reservation lifecycle methods for the `@nblair2/igor2` model:
+ * Swamp model `@nblair2/igor2/reservations` — the igor2 reservation lifecycle:
  * create / show / list / edit / delete against `/igor/reservations`.
+ *
+ * Connection and credentials are configured once via the model's global
+ * arguments. Methods and resources are inlined into `export const model` so the
+ * swamp-club registry's static content extractor can index them.
  *
  * @module
  */
 import { z } from "npm:zod@4.3.6";
 import {
+  GlobalArgsSchema,
   IgorApiError,
   ReservationSchema,
   reservationsFromData,
-} from "../_lib/igor.ts";
+} from "./_lib/igor.ts";
 import {
   clientFor,
-  defineMethod,
   inst,
-  type MethodDef,
   type MethodResult,
-  type ResourceSpec,
+  type ModelContext,
   writeList,
-} from "../_lib/model.ts";
+} from "./_lib/model.ts";
 
 const PREFIX = "reservation";
 
@@ -57,6 +60,8 @@ const CreateArgs = z.object({
 const NameArg = z.object({
   name: z.string().min(1).describe("Reservation name"),
 });
+
+const ListArgs = z.object({});
 
 const EditArgs = z.object({
   name: z.string().min(1).describe("Reservation to edit"),
@@ -122,125 +127,147 @@ function findReservation(
   return list.find((r) => r.name === name) ?? null;
 }
 
-/** Resource specs owned by this group. */
-export const resources: Record<string, ResourceSpec> = {
-  reservation: {
-    description: "An igor2 node reservation and its current host state",
-    schema: ReservationSchema,
-    lifetime: "infinite",
-    garbageCollection: 10,
+/**
+ * The `@nblair2/igor2/reservations` model: the igor2 node-reservation
+ * lifecycle. See the README for the full method reference.
+ */
+export const model = {
+  type: "@nblair2/igor2/reservations",
+  version: "2026.05.30.1",
+  globalArguments: GlobalArgsSchema,
+  resources: {
+    reservation: {
+      description: "An igor2 node reservation and its current host state",
+      schema: ReservationSchema,
+      lifetime: "infinite",
+      garbageCollection: 10,
+    },
   },
-};
-
-/** Methods contributed by this group. */
-export const methods: Record<string, MethodDef> = {
-  reservation_create: defineMethod({
-    description:
-      "Create a node reservation. Idempotent: if the name already exists, " +
-      "returns the existing reservation.",
-    arguments: CreateArgs,
-    execute: async (args, context): Promise<MethodResult> => {
-      const client = await clientFor(context);
-      let reservation: Record<string, unknown> | null;
-      try {
-        const res = await client.post("/reservations", createBody(args));
-        reservation = reservationsFromData(res.data)[0] ?? { name: args.name };
-      } catch (err) {
-        // Already exists (HTTP 409): fall back to returning current state.
-        if (err instanceof IgorApiError && err.status === 409) {
-          const list = await client.get("/reservations");
-          reservation = findReservation(
-            reservationsFromData(list.data),
-            args.name,
-          );
-          if (!reservation) throw err;
-        } else {
-          throw err;
+  methods: {
+    reservation_create: {
+      description:
+        "Create a node reservation; idempotent (returns the existing one on conflict)",
+      arguments: CreateArgs,
+      execute: async (
+        args: z.infer<typeof CreateArgs>,
+        context: ModelContext,
+      ): Promise<MethodResult> => {
+        const client = await clientFor(context);
+        let reservation: Record<string, unknown> | null;
+        try {
+          const res = await client.post("/reservations", createBody(args));
+          reservation = reservationsFromData(res.data)[0] ??
+            { name: args.name };
+        } catch (err) {
+          // Already exists (HTTP 409): fall back to returning current state.
+          if (err instanceof IgorApiError && err.status === 409) {
+            const list = await client.get("/reservations");
+            reservation = findReservation(
+              reservationsFromData(list.data),
+              args.name,
+            );
+            if (!reservation) throw err;
+          } else {
+            throw err;
+          }
         }
-      }
-      const handle = await context.writeResource(
-        "reservation",
-        inst(PREFIX, args.name),
-        reservation,
-      );
-      return { dataHandles: [handle] };
+        const handle = await context.writeResource(
+          "reservation",
+          inst(PREFIX, args.name),
+          reservation,
+        );
+        return { dataHandles: [handle] };
+      },
     },
-  }),
 
-  reservation_show: defineMethod({
-    description: "Fetch a single reservation by name and store its state",
-    arguments: NameArg,
-    execute: async (args, context): Promise<MethodResult> => {
-      const client = await clientFor(context);
-      const res = await client.get("/reservations");
-      const reservation = findReservation(
-        reservationsFromData(res.data),
-        args.name,
-      );
-      if (!reservation) {
-        throw new Error(`reservation '${args.name}' not found`);
-      }
-      const handle = await context.writeResource(
-        "reservation",
-        inst(PREFIX, args.name),
-        reservation,
-      );
-      return { dataHandles: [handle] };
+    reservation_show: {
+      description: "Fetch a single reservation by name and store its state",
+      arguments: NameArg,
+      execute: async (
+        args: z.infer<typeof NameArg>,
+        context: ModelContext,
+      ): Promise<MethodResult> => {
+        const client = await clientFor(context);
+        const res = await client.get("/reservations");
+        const reservation = findReservation(
+          reservationsFromData(res.data),
+          args.name,
+        );
+        if (!reservation) {
+          throw new Error(`reservation '${args.name}' not found`);
+        }
+        const handle = await context.writeResource(
+          "reservation",
+          inst(PREFIX, args.name),
+          reservation,
+        );
+        return { dataHandles: [handle] };
+      },
     },
-  }),
 
-  reservation_list: defineMethod({
-    description: "List all visible reservations, storing each one",
-    arguments: z.object({}),
-    execute: async (_args, context): Promise<MethodResult> => {
-      const client = await clientFor(context);
-      const res = await client.get("/reservations");
-      const handles = await writeList(
-        context,
-        "reservation",
-        PREFIX,
-        reservationsFromData(res.data),
-      );
-      return { dataHandles: handles };
+    reservation_list: {
+      description: "List all visible reservations, storing each one",
+      arguments: ListArgs,
+      execute: async (
+        _args: z.infer<typeof ListArgs>,
+        context: ModelContext,
+      ): Promise<MethodResult> => {
+        const client = await clientFor(context);
+        const res = await client.get("/reservations");
+        const handles = await writeList(
+          context,
+          "reservation",
+          PREFIX,
+          reservationsFromData(res.data),
+        );
+        return { dataHandles: handles };
+      },
     },
-  }),
 
-  reservation_edit: defineMethod({
-    description: "Modify a reservation (extend, add/drop nodes, rename, etc.)",
-    arguments: EditArgs,
-    execute: async (args, context): Promise<MethodResult> => {
-      const client = await clientFor(context);
-      const body = editBody(args);
-      if (Object.keys(body).length === 0) {
-        throw new Error("no changes provided to reservation_edit");
-      }
-      await client.patch(
-        `/reservations/${encodeURIComponent(args.name)}`,
-        body,
-      );
-      // Re-read so stored state reflects the edit (and any rename).
-      const finalName = args.newName ?? args.name;
-      const list = await client.get("/reservations");
-      const reservation = findReservation(
-        reservationsFromData(list.data),
-        finalName,
-      ) ?? { name: finalName };
-      const handle = await context.writeResource(
-        "reservation",
-        inst(PREFIX, finalName),
-        reservation,
-      );
-      return { dataHandles: [handle] };
+    reservation_edit: {
+      description:
+        "Modify a reservation (extend, add/drop nodes, rename, re-distro, etc.)",
+      arguments: EditArgs,
+      execute: async (
+        args: z.infer<typeof EditArgs>,
+        context: ModelContext,
+      ): Promise<MethodResult> => {
+        const client = await clientFor(context);
+        const body = editBody(args);
+        if (Object.keys(body).length === 0) {
+          throw new Error("no changes provided to reservation_edit");
+        }
+        await client.patch(
+          `/reservations/${encodeURIComponent(args.name)}`,
+          body,
+        );
+        // Re-read so stored state reflects the edit (and any rename).
+        const finalName = args.newName ?? args.name;
+        const list = await client.get("/reservations");
+        const reservation = findReservation(
+          reservationsFromData(list.data),
+          finalName,
+        ) ?? { name: finalName };
+        const handle = await context.writeResource(
+          "reservation",
+          inst(PREFIX, finalName),
+          reservation,
+        );
+        return { dataHandles: [handle] };
+      },
     },
-  }),
 
-  reservation_delete: defineMethod({
-    description: "Delete a reservation",
-    arguments: NameArg,
-    execute: async (args, context): Promise<MethodResult> => {
-      const client = await clientFor(context);
-      await client.del(`/reservations/${encodeURIComponent(args.name)}`);
-      return { dataHandles: [] };
+    reservation_delete: {
+      description: "Delete a reservation",
+      arguments: NameArg,
+      execute: async (
+        args: z.infer<typeof NameArg>,
+        context: ModelContext,
+      ): Promise<MethodResult> => {
+        const client = await clientFor(context);
+        await client.del(`/reservations/${encodeURIComponent(args.name)}`);
+        return { dataHandles: [] };
+      },
     },
-  }),
+  },
 };
